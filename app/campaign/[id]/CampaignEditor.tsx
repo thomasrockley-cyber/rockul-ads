@@ -173,6 +173,13 @@ export default function CampaignEditor({
       totalSent += data.sent;
       totalFailed += data.failed;
       if (data.done) break;
+      if (data.quotaExceeded) {
+        setSending(false);
+        setMessage(
+          `Paused — hit Resend's send quota. ${totalSent} sent so far, ${data.pending} left. This will pick back up automatically (try again later, or it'll resume on the next scheduled run).`
+        );
+        return;
+      }
       setMessage(`Sending… ${totalSent} sent so far, ${data.pending} left. Keep this tab open.`);
     }
 

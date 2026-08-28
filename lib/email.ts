@@ -49,17 +49,31 @@ function emailHtml(params: {
   `.trim();
 }
 
-// Sends to recipients in small concurrent batches rather than one at a time
-// (slow) or all at once (risks hitting Resend's rate limit) or Resend's
-// batch-send endpoint (its per-recipient personalisation is more limited,
-// and this stays simple enough not to need it at this scale).
+// 8 concurrent requests, then a pause before the next chunk — sized to stay
+// safely under Resend's 10-requests/second limit on the free plan (8 in
+// under a second, then a full second of headroom before the next burst,
+// rather than firing every chunk back-to-back and bursting past it).
 const CONCURRENCY = 8;
+const CHUNK_DELAY_MS = 1000;
+
+// Resend's rate limit and quota-exceeded responses aren't failures of the
+// email address itself — retrying later should work fine. Treating them as
+// permanent failures (the original bug here) would wrongly discard good
+// recipients just because a burst of sends briefly exceeded 10 req/s.
+const RETRIABLE_ERROR_NAMES = new Set(["rate_limit_exceeded", "daily_quota_exceeded", "monthly_quota_exceeded"]);
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 // Stops picking up new chunks once past this deadline, returning whatever's
 // been processed so far — the caller (sendCampaign.ts) persists per-chunk
 // progress and resumes the rest in a later invocation. Bounded per-recipient
 // list in, per-recipient results out, rather than aggregate counts, so the
-// caller can mark exactly who succeeded/failed in the database.
+// caller can mark exactly who succeeded/failed in the database. Recipients
+// hit by a retriable error appear in neither list — the caller leaves them
+// pending rather than recording any result, so the next invocation retries
+// them automatically rather than losing them.
 export async function sendCampaignToRecipients(params: {
   campaignId: string;
   companyName: string;
@@ -70,16 +84,17 @@ export async function sendCampaignToRecipients(params: {
   recipients: string[];
   siteUrl: string;
   deadline: number; // Date.now()-comparable timestamp
-}): Promise<{ successEmails: string[]; failedEmails: string[] }> {
+}): Promise<{ successEmails: string[]; failedEmails: string[]; quotaExceeded: boolean }> {
   const { campaignId, companyName, fromName, subject, imageUrl, linkUrl, recipients, siteUrl, deadline } = params;
   const fromAddress = process.env.EMAIL_FROM_ADDRESS ?? "ads@ads.rockul.com";
   const from = `${fromName || companyName} <${fromAddress}>`;
 
   const successEmails: string[] = [];
   const failedEmails: string[] = [];
+  let quotaExceeded = false;
 
   for (let i = 0; i < recipients.length; i += CONCURRENCY) {
-    if (Date.now() >= deadline) break;
+    if (Date.now() >= deadline || quotaExceeded) break;
     const chunk = recipients.slice(i, i + CONCURRENCY);
     const results = await Promise.allSettled(
       chunk.map((email) => {
@@ -98,10 +113,25 @@ export async function sendCampaignToRecipients(params: {
       })
     );
     results.forEach((r, idx) => {
-      if (r.status === "fulfilled" && !r.value.error) successEmails.push(chunk[idx]);
-      else failedEmails.push(chunk[idx]);
+      if (r.status === "fulfilled" && !r.value.error) {
+        successEmails.push(chunk[idx]);
+        return;
+      }
+      const errorName = r.status === "fulfilled" ? r.value.error?.name : undefined;
+      if (errorName && RETRIABLE_ERROR_NAMES.has(errorName)) {
+        // Left out of both lists — stays pending, retried next time.
+        if (errorName === "daily_quota_exceeded" || errorName === "monthly_quota_exceeded") {
+          quotaExceeded = true; // no point burning through more chunks right now
+        }
+        return;
+      }
+      failedEmails.push(chunk[idx]); // genuinely bad address / permanent error
     });
+
+    if (i + CONCURRENCY < recipients.length && Date.now() < deadline && !quotaExceeded) {
+      await sleep(CHUNK_DELAY_MS);
+    }
   }
 
-  return { successEmails, failedEmails };
+  return { successEmails, failedEmails, quotaExceeded };
 }

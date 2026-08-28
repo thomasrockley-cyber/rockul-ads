@@ -27,7 +27,7 @@ const FETCH_BATCH_SIZE = 500;
 
 export type SendResult =
   | { ok: true; done: true; sent: number; failed: number }
-  | { ok: true; done: false; sent: number; failed: number; pending: number }
+  | { ok: true; done: false; sent: number; failed: number; pending: number; quotaExceeded?: boolean }
   | { ok: false; error: string };
 
 // Resumable: call this again with the same campaignId and it picks up
@@ -58,13 +58,14 @@ export async function sendCampaignNow(campaignId: string, deadline = Date.now() 
 
   let invocationSent = 0;
   let invocationFailed = 0;
+  let hitQuota = false;
 
   try {
     while (Date.now() < deadline) {
       const pending = await getPendingAttemptRecipients(attempt.id, FETCH_BATCH_SIZE);
       if (pending.length === 0) break;
 
-      const { successEmails, failedEmails } = await sendCampaignToRecipients({
+      const { successEmails, failedEmails, quotaExceeded } = await sendCampaignToRecipients({
         campaignId,
         companyName: campaign.company_name || "Ad",
         fromName: campaign.from_name,
@@ -78,10 +79,13 @@ export async function sendCampaignNow(campaignId: string, deadline = Date.now() 
       await markAttemptRecipientsResult(attempt.id, successEmails, failedEmails);
       invocationSent += successEmails.length;
       invocationFailed += failedEmails.length;
+      if (quotaExceeded) hitQuota = true;
 
-      // Fewer results than requested means the deadline was hit mid-batch —
-      // no point looping again to immediately hit the same deadline check.
-      if (successEmails.length + failedEmails.length < pending.length) break;
+      // Fewer results than requested means either the deadline was hit
+      // mid-batch, or some recipients hit a retriable error (rate limit /
+      // quota) and were left pending rather than recorded — either way,
+      // no point looping again right now.
+      if (successEmails.length + failedEmails.length < pending.length || quotaExceeded) break;
     }
   } catch (err) {
     // Attempt stays in_progress (not marked completed) so the next call
@@ -93,7 +97,14 @@ export async function sendCampaignNow(campaignId: string, deadline = Date.now() 
   const progress = await countAttemptProgress(attempt.id);
 
   if (progress.pending > 0) {
-    return { ok: true, done: false, sent: invocationSent, failed: invocationFailed, pending: progress.pending };
+    return {
+      ok: true,
+      done: false,
+      sent: invocationSent,
+      failed: invocationFailed,
+      pending: progress.pending,
+      quotaExceeded: hitQuota,
+    };
   }
 
   await completeAttempt(attempt.id);
