@@ -27,6 +27,7 @@ export async function sendCampaignNow(campaignId: string): Promise<
       fromName: campaign.from_name,
       subject: campaign.subject,
       imageUrl: campaign.image_url,
+      linkUrl: campaign.link_url,
       recipients,
       siteUrl,
     });

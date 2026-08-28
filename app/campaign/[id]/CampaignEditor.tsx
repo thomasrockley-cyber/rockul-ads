@@ -7,6 +7,7 @@ interface Campaign {
   slot_number: number;
   company_name: string;
   image_url: string | null;
+  link_url: string | null;
   subject: string;
   from_name: string;
   schedule_frequency: "none" | "daily" | "weekly";
@@ -48,6 +49,7 @@ export default function CampaignEditor({
   const [companyName, setCompanyName] = useState(campaign.company_name);
   const [subject, setSubject] = useState(campaign.subject);
   const [fromName, setFromName] = useState(campaign.from_name);
+  const [linkUrl, setLinkUrl] = useState(campaign.link_url ?? "");
   const [imageUrl, setImageUrl] = useState(campaign.image_url);
   const [frequency, setFrequency] = useState(campaign.schedule_frequency);
   const [scheduleTime, setScheduleTime] = useState(campaign.schedule_time?.slice(0, 5) ?? "09:00");
@@ -74,7 +76,7 @@ export default function CampaignEditor({
     const res = await fetch(`/api/campaigns/${campaign.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ company_name: companyName, subject, from_name: fromName }),
+      body: JSON.stringify({ company_name: companyName, subject, from_name: fromName, link_url: linkUrl }),
     });
     setSavingDetails(false);
     setMessage(res.ok ? "Saved." : "Failed to save.");
@@ -231,6 +233,16 @@ export default function CampaignEditor({
             onChange={(e) => setFromName(e.target.value)}
             onBlur={saveDetails}
             placeholder={companyName || "Company name"}
+            className={inputClass}
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-sm">
+          Website link (adds a &quot;Visit website&quot; button to the email — optional)
+          <input
+            value={linkUrl}
+            onChange={(e) => setLinkUrl(e.target.value)}
+            onBlur={saveDetails}
+            placeholder="example.com"
             className={inputClass}
           />
         </label>

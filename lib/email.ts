@@ -13,12 +13,26 @@ function getResend(): Resend {
 function emailHtml(params: {
   companyName: string;
   imageUrl: string;
+  linkUrl: string | null;
   unsubscribeUrl: string;
 }) {
-  const { companyName, imageUrl, unsubscribeUrl } = params;
+  const { companyName, imageUrl, linkUrl, unsubscribeUrl } = params;
+  const img = `<img src="${imageUrl}" alt="${companyName}" style="width:100%;height:auto;display:block;border-radius:8px" />`;
+  // The image itself is clickable when a link is set (common pattern), plus
+  // an explicit button below it — some clients/screen readers don't make an
+  // image's clickability obvious otherwise.
+  const imageBlock = linkUrl ? `<a href="${linkUrl}" style="text-decoration:none">${img}</a>` : img;
+  const button = linkUrl
+    ? `
+      <div style="text-align:center;margin:20px 0 0">
+        <a href="${linkUrl}" style="display:inline-block;background:#171717;color:#fff;text-decoration:none;padding:12px 24px;border-radius:6px;font-size:14px;font-weight:600">Visit website</a>
+      </div>
+    `
+    : "";
   return `
     <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:600px;margin:0 auto">
-      <img src="${imageUrl}" alt="${companyName}" style="width:100%;height:auto;display:block;border-radius:8px" />
+      ${imageBlock}
+      ${button}
       <p style="font-size:11px;color:#888;text-align:center;margin:20px 0 0;line-height:1.6">
         You're receiving this because you gave ${companyName} permission to email you.
         <a href="${unsubscribeUrl}" style="color:#888">Unsubscribe</a> at any time.
@@ -39,10 +53,11 @@ export async function sendCampaignToRecipients(params: {
   fromName: string;
   subject: string;
   imageUrl: string;
+  linkUrl: string | null;
   recipients: string[];
   siteUrl: string;
 }): Promise<{ sent: number; failed: number }> {
-  const { campaignId, companyName, fromName, subject, imageUrl, recipients, siteUrl } = params;
+  const { campaignId, companyName, fromName, subject, imageUrl, linkUrl, recipients, siteUrl } = params;
   const fromAddress = process.env.EMAIL_FROM_ADDRESS ?? "ads@ads.rockul.com";
   const from = `${fromName || companyName} <${fromAddress}>`;
 
@@ -59,7 +74,7 @@ export async function sendCampaignToRecipients(params: {
           from,
           to: email,
           subject,
-          html: emailHtml({ companyName, imageUrl, unsubscribeUrl }),
+          html: emailHtml({ companyName, imageUrl, linkUrl, unsubscribeUrl }),
           headers: {
             "List-Unsubscribe": `<${unsubscribeUrl}>`,
             "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",

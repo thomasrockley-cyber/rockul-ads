@@ -10,6 +10,7 @@ create table campaigns (
   slot_number int not null unique check (slot_number between 1 and 5),
   company_name text not null default '',
   image_url text,
+  link_url text, -- optional "visit website" link included in the email
   subject text not null default '',
   from_name text not null default '',
   schedule_frequency text not null default 'none' check (schedule_frequency in ('none', 'daily', 'weekly')),

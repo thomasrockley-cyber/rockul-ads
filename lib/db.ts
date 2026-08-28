@@ -18,6 +18,7 @@ export interface Campaign {
   slot_number: number;
   company_name: string;
   image_url: string | null;
+  link_url: string | null;
   subject: string;
   from_name: string;
   schedule_frequency: "none" | "daily" | "weekly";
@@ -80,6 +81,7 @@ export async function updateCampaign(
     | "company_name"
     | "subject"
     | "from_name"
+    | "link_url"
     | "schedule_frequency"
     | "schedule_time"
     | "schedule_day_of_week"
@@ -92,6 +94,7 @@ export async function updateCampaign(
       company_name = ${fields.company_name},
       subject = ${fields.subject},
       from_name = ${fields.from_name},
+      link_url = ${fields.link_url},
       schedule_frequency = ${fields.schedule_frequency},
       schedule_time = ${fields.schedule_time},
       schedule_day_of_week = ${fields.schedule_day_of_week},
