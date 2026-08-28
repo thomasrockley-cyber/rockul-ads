@@ -1,6 +1,9 @@
 -- Rockul Ads — single-user ad-sending tool
--- Run this in Supabase's SQL Editor on a NEW Supabase project (kept separate
--- from Cash Comp's database on purpose).
+-- Run this against the Neon Postgres database (Vercel Storage → Postgres).
+-- Vercel's dashboard has a SQL query console for the database, or use any
+-- Postgres client with the connection string from DATABASE_URL.
+
+create extension if not exists pgcrypto; -- for gen_random_uuid()
 
 create table campaigns (
   id uuid primary key default gen_random_uuid(),
@@ -43,11 +46,3 @@ create table send_log (
 );
 
 create index send_log_campaign_id_idx on send_log(campaign_id);
-
--- No RLS policies needed — this app only ever talks to Supabase via the
--- service-role key from trusted server-side code (single-password-gated),
--- never from the browser directly. RLS stays enabled with no policies as a
--- safety net (default-deny) in case a browser client key ever leaks in.
-alter table campaigns enable row level security;
-alter table recipients enable row level security;
-alter table send_log enable row level security;

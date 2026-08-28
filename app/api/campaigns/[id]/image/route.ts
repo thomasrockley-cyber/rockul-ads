@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { put } from "@vercel/blob";
+import { setCampaignImage } from "@/lib/db";
 
 const MAX_SIZE_BYTES = 8 * 1024 * 1024; // 8MB
 const ALLOWED_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
@@ -18,25 +19,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: "File too large (max 8MB)" }, { status: 400 });
   }
 
-  const admin = createAdminClient();
   const ext = file.type.split("/")[1];
-  const path = `${id}-${Date.now()}.${ext}`;
+  const blob = await put(`ad-images/${id}-${Date.now()}.${ext}`, file, {
+    access: "public",
+    addRandomSuffix: false,
+  });
 
-  const { error: uploadError } = await admin.storage
-    .from("ad-images")
-    .upload(path, await file.arrayBuffer(), { contentType: file.type, upsert: true });
-  if (uploadError) {
-    return NextResponse.json({ error: uploadError.message }, { status: 500 });
-  }
+  await setCampaignImage(id, blob.url);
 
-  const { data: publicUrlData } = admin.storage.from("ad-images").getPublicUrl(path);
-  const { error: updateError } = await admin
-    .from("campaigns")
-    .update({ image_url: publicUrlData.publicUrl, updated_at: new Date().toISOString() })
-    .eq("id", id);
-  if (updateError) {
-    return NextResponse.json({ error: updateError.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ image_url: publicUrlData.publicUrl });
+  return NextResponse.json({ image_url: blob.url });
 }

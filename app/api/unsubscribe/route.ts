@@ -1,4 +1,4 @@
-import { createAdminClient } from "@/lib/supabase/admin";
+import { markUnsubscribed } from "@/lib/db";
 import { verifyUnsubscribeToken } from "@/lib/unsubscribeToken";
 
 function htmlPage(message: string) {
@@ -20,12 +20,7 @@ export async function GET(req: Request) {
   const parsed = verifyUnsubscribeToken(token);
   if (!parsed) return htmlPage("Invalid or expired unsubscribe link.");
 
-  const admin = createAdminClient();
-  await admin
-    .from("recipients")
-    .update({ unsubscribed_at: new Date().toISOString() })
-    .eq("campaign_id", parsed.campaignId)
-    .eq("email", parsed.email);
+  await markUnsubscribed(parsed.campaignId, parsed.email);
 
   return htmlPage(`You've been unsubscribed (${parsed.email}) and won't receive any more of these emails.`);
 }

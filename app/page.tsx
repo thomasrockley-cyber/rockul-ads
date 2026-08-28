@@ -1,37 +1,12 @@
 import Link from "next/link";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { getAllCampaigns, countActiveRecipients } from "@/lib/db";
 import LogoutButton from "@/components/LogoutButton";
 
 export const dynamic = "force-dynamic";
 
-interface CampaignRow {
-  id: string;
-  slot_number: number;
-  company_name: string;
-  image_url: string | null;
-  schedule_frequency: "none" | "daily" | "weekly";
-  active: boolean;
-  last_sent_at: string | null;
-}
-
 export default async function DashboardPage() {
-  const supabase = createAdminClient();
-  const { data: campaigns } = await supabase
-    .from("campaigns")
-    .select("id, slot_number, company_name, image_url, schedule_frequency, active, last_sent_at")
-    .order("slot_number", { ascending: true });
-
-  const rows = (campaigns ?? []) as CampaignRow[];
-
-  const counts = await Promise.all(
-    rows.map((c) =>
-      supabase
-        .from("recipients")
-        .select("id", { count: "exact", head: true })
-        .eq("campaign_id", c.id)
-        .is("unsubscribed_at", null)
-    )
-  );
+  const campaigns = await getAllCampaigns();
+  const counts = await Promise.all(campaigns.map((c) => countActiveRecipients(c.id)));
 
   return (
     <div className="mx-auto w-full max-w-3xl p-4 sm:p-8">
@@ -41,8 +16,8 @@ export default async function DashboardPage() {
       </div>
 
       <div className="flex flex-col gap-3">
-        {rows.map((c, i) => {
-          const recipientCount = counts[i].count ?? 0;
+        {campaigns.map((c, i) => {
+          const recipientCount = counts[i];
           return (
             <Link
               key={c.id}

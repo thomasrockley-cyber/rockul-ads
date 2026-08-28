@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createAdminClient } from "@/lib/supabase/admin";
+import { getDueCampaigns } from "@/lib/db";
 import { sendCampaignNow } from "@/lib/sendCampaign";
 
 // Called by Vercel Cron (see vercel.json) — Vercel automatically attaches
@@ -12,21 +12,13 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const admin = createAdminClient();
-  const { data: due, error } = await admin
-    .from("campaigns")
-    .select("id")
-    .eq("active", true)
-    .neq("schedule_frequency", "none")
-    .lte("next_send_at", new Date().toISOString());
-
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  const due = await getDueCampaigns();
 
   const results = [];
-  for (const campaign of due ?? []) {
+  for (const campaign of due) {
     const result = await sendCampaignNow(campaign.id);
     results.push({ campaignId: campaign.id, ...result });
   }
 
-  return NextResponse.json({ checked: due?.length ?? 0, results });
+  return NextResponse.json({ checked: due.length, results });
 }
