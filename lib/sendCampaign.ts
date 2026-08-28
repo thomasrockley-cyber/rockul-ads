@@ -36,7 +36,7 @@ export type SendResult =
 // send_attempts/send_attempt_recipients comment for the full design.
 //
 // `deadline` defaults to a fresh BUDGET_MS window for a single-campaign
-// call (the manual send route). The cron route processes up to 5 campaigns
+// call (the manual send route). The cron route processes up to 20 campaigns
 // in one invocation and must instead pass ONE shared deadline computed
 // once at the start of its run — otherwise each campaign would get its own
 // fresh 50s budget and the batch could blow well past the outer function's

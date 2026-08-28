@@ -7,7 +7,7 @@ create extension if not exists pgcrypto; -- for gen_random_uuid()
 
 create table campaigns (
   id uuid primary key default gen_random_uuid(),
-  slot_number int not null unique check (slot_number between 1 and 5),
+  slot_number int not null unique check (slot_number between 1 and 20),
   company_name text not null default '',
   image_url text,
   link_url text, -- optional "visit website" link included in the email
@@ -23,8 +23,8 @@ create table campaigns (
   updated_at timestamptz not null default now()
 );
 
--- Pre-seed the 5 fixed slots.
-insert into campaigns (slot_number) values (1), (2), (3), (4), (5);
+-- Pre-seed the 20 fixed slots.
+insert into campaigns (slot_number) select generate_series(1, 20);
 
 create table recipients (
   id uuid primary key default gen_random_uuid(),

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getDueCampaigns } from "@/lib/db";
 import { sendCampaignNow, BUDGET_MS } from "@/lib/sendCampaign";
 
-// 60s is the max on Vercel's Hobby plan. This route can process up to 5
+// 60s is the max on Vercel's Hobby plan. This route can process up to 20
 // campaigns in one run (all due on the same day), so it's the more likely
 // of the two send paths to actually hit a duration limit.
 export const maxDuration = 60;

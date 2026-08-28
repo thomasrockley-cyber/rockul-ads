@@ -1,7 +1,7 @@
 # Rockul Ads
 
 Private, single-password internal tool for sending permission-based
-advertising emails for up to 5 companies. Each of the 5 slots has its own ad
+advertising emails for up to 20 companies. Each slot has its own ad
 image, subject line, recipient list, and send schedule (manual / daily /
 weekly). Every email includes a working unsubscribe link.
 
