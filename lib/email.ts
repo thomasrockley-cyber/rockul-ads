@@ -17,7 +17,15 @@ function emailHtml(params: {
   unsubscribeUrl: string;
 }) {
   const { companyName, imageUrl, linkUrl, unsubscribeUrl } = params;
-  const img = `<img src="${imageUrl}" alt="${companyName}" style="width:100%;height:auto;display:block;border-radius:8px" />`;
+  // Several mail clients ignore the width:100% CSS on <img> and fall back to
+  // its native pixel size — when that happens, only centering the container
+  // (which was the whole bug: an image narrower than its container just
+  // sits at the container's default left alignment) doesn't help. Fixed
+  // three ways at once: an explicit HTML width attribute for clients that
+  // honour that over CSS, max-width:100% so it still shrinks on narrow
+  // screens, and margin:0 auto directly on the image itself so it centers
+  // even when it renders at its native (narrower-than-container) width.
+  const img = `<img src="${imageUrl}" alt="${companyName}" width="600" style="width:100%;max-width:600px;height:auto;display:block;margin:0 auto;border-radius:8px" />`;
   // The image itself is clickable when a link is set (common pattern), plus
   // an explicit button below it — some clients/screen readers don't make an
   // image's clickability obvious otherwise.
@@ -25,12 +33,12 @@ function emailHtml(params: {
   const button = linkUrl
     ? `
       <div style="text-align:center;margin:20px 0 0">
-        <a href="${linkUrl}" style="display:inline-block;background:#171717;color:#fff;text-decoration:none;padding:12px 24px;border-radius:6px;font-size:14px;font-weight:600">Visit website</a>
+        <a href="${linkUrl}" style="display:inline-block;background:#171717;color:#fff;text-decoration:none;padding:12px 24px;border-radius:6px;font-size:14px;font-weight:600">Click here to visit website</a>
       </div>
     `
     : "";
   return `
-    <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:600px;margin:0 auto">
+    <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:600px;margin:0 auto;text-align:center">
       ${imageBlock}
       ${button}
       <p style="font-size:11px;color:#888;text-align:center;margin:20px 0 0;line-height:1.6">

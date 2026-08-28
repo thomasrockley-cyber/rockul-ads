@@ -254,7 +254,7 @@ export default function CampaignEditor({
           />
         </label>
         <label className="flex flex-col gap-1 text-sm">
-          Website link (adds a &quot;Visit website&quot; button to the email — optional)
+          Website link (adds a &quot;Click here to visit website&quot; button to the email — optional)
           <input
             value={linkUrl}
             onChange={(e) => setLinkUrl(e.target.value)}
