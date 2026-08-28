@@ -47,3 +47,37 @@ create table send_log (
 );
 
 create index send_log_campaign_id_idx on send_log(campaign_id);
+
+-- A "send attempt" represents one send operation for a campaign (one manual
+-- click, or one scheduled trigger). It's resumable across multiple function
+-- invocations — each 60-second Vercel Hobby function call processes as many
+-- recipients as it can before its deadline, and a still-in-progress attempt
+-- picks up exactly where it left off on the next call (manual sends: the
+-- browser re-calls automatically; scheduled sends: the next daily cron tick)
+-- rather than either failing silently or risking double-sends on retry.
+create table send_attempts (
+  id uuid primary key default gen_random_uuid(),
+  campaign_id uuid not null references campaigns(id) on delete cascade,
+  status text not null default 'in_progress' check (status in ('in_progress', 'completed')),
+  started_at timestamptz not null default now(),
+  completed_at timestamptz
+);
+
+create index send_attempts_campaign_id_idx on send_attempts(campaign_id);
+
+-- A snapshot of exactly who this attempt is sending to, taken once when the
+-- attempt starts — so recipients added mid-send don't get folded into an
+-- attempt already in progress, and each row's own sent_at/failed tracks
+-- progress precisely enough that a resume never re-emails someone already
+-- sent to (barring the rare case of a hard kill mid-chunk; see sendCampaign.ts).
+create table send_attempt_recipients (
+  id uuid primary key default gen_random_uuid(),
+  attempt_id uuid not null references send_attempts(id) on delete cascade,
+  email text not null,
+  sent_at timestamptz,
+  failed boolean not null default false,
+  unique (attempt_id, email)
+);
+
+create index send_attempt_recipients_pending_idx
+  on send_attempt_recipients(attempt_id) where sent_at is null and failed = false;

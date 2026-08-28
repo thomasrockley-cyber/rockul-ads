@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { sendCampaignNow } from "@/lib/sendCampaign";
 
-// 60s is the max on Vercel's Hobby plan — without this it defaults to much
-// shorter, and a big recipient list would get the function killed mid-send
-// (with nothing logged, since send_log is only written after the loop
-// finishes) rather than actually completing. See lib/email.ts's CONCURRENCY.
+// 60s is the max on Vercel's Hobby plan. sendCampaignNow() is resumable —
+// for a recipient list too large to finish in one call, it processes what
+// it can and returns done:false; the frontend calls this same endpoint
+// again to continue (see CampaignEditor.tsx's sendNow()), and each call
+// picks up exactly where the last one left off without re-emailing anyone.
 export const maxDuration = 60;
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {

@@ -47,6 +47,11 @@ function emailHtml(params: {
 // and this stays simple enough not to need it at this scale).
 const CONCURRENCY = 8;
 
+// Stops picking up new chunks once past this deadline, returning whatever's
+// been processed so far — the caller (sendCampaign.ts) persists per-chunk
+// progress and resumes the rest in a later invocation. Bounded per-recipient
+// list in, per-recipient results out, rather than aggregate counts, so the
+// caller can mark exactly who succeeded/failed in the database.
 export async function sendCampaignToRecipients(params: {
   campaignId: string;
   companyName: string;
@@ -56,15 +61,17 @@ export async function sendCampaignToRecipients(params: {
   linkUrl: string | null;
   recipients: string[];
   siteUrl: string;
-}): Promise<{ sent: number; failed: number }> {
-  const { campaignId, companyName, fromName, subject, imageUrl, linkUrl, recipients, siteUrl } = params;
+  deadline: number; // Date.now()-comparable timestamp
+}): Promise<{ successEmails: string[]; failedEmails: string[] }> {
+  const { campaignId, companyName, fromName, subject, imageUrl, linkUrl, recipients, siteUrl, deadline } = params;
   const fromAddress = process.env.EMAIL_FROM_ADDRESS ?? "ads@ads.rockul.com";
   const from = `${fromName || companyName} <${fromAddress}>`;
 
-  let sent = 0;
-  let failed = 0;
+  const successEmails: string[] = [];
+  const failedEmails: string[] = [];
 
   for (let i = 0; i < recipients.length; i += CONCURRENCY) {
+    if (Date.now() >= deadline) break;
     const chunk = recipients.slice(i, i + CONCURRENCY);
     const results = await Promise.allSettled(
       chunk.map((email) => {
@@ -82,11 +89,11 @@ export async function sendCampaignToRecipients(params: {
         });
       })
     );
-    for (const r of results) {
-      if (r.status === "fulfilled" && !r.value.error) sent++;
-      else failed++;
-    }
+    results.forEach((r, idx) => {
+      if (r.status === "fulfilled" && !r.value.error) successEmails.push(chunk[idx]);
+      else failedEmails.push(chunk[idx]);
+    });
   }
 
-  return { sent, failed };
+  return { successEmails, failedEmails };
 }

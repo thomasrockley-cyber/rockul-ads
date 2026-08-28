@@ -58,13 +58,19 @@ export async function getCampaign(id: string): Promise<Campaign | null> {
   return (rows[0] as Campaign) ?? null;
 }
 
+// Due for a fresh scheduled send, OR already mid-send from an earlier
+// invocation that hit its time budget — the latter needs picking back up
+// even though next_send_at won't advance until the attempt actually
+// completes (see lib/sendCampaign.ts).
 export async function getDueCampaigns(): Promise<Campaign[]> {
   const rows = await getSql()`
-    SELECT * FROM campaigns
-    WHERE active = true
-      AND schedule_frequency != 'none'
-      AND next_send_at IS NOT NULL
-      AND next_send_at <= now()
+    SELECT DISTINCT c.* FROM campaigns c
+    LEFT JOIN send_attempts a ON a.campaign_id = c.id AND a.status = 'in_progress'
+    WHERE c.active = true
+      AND (
+        (c.schedule_frequency != 'none' AND c.next_send_at IS NOT NULL AND c.next_send_at <= now())
+        OR a.id IS NOT NULL
+      )
   `;
   return rows as Campaign[];
 }
@@ -183,4 +189,85 @@ export async function listSendLog(campaignId: string, limit: number): Promise<Se
     ORDER BY sent_at DESC LIMIT ${limit}
   `;
   return rows as SendLogEntry[];
+}
+
+export interface SendAttempt {
+  id: string;
+  campaign_id: string;
+  status: "in_progress" | "completed";
+  started_at: string;
+  completed_at: string | null;
+}
+
+export async function getInProgressAttempt(campaignId: string): Promise<SendAttempt | null> {
+  const rows = await getSql()`
+    SELECT * FROM send_attempts WHERE campaign_id = ${campaignId} AND status = 'in_progress'
+    ORDER BY started_at DESC LIMIT 1
+  `;
+  return (rows[0] as SendAttempt) ?? null;
+}
+
+// Snapshots the current active recipient list into the attempt at the
+// moment it starts — anyone unsubscribing mid-send is excluded from
+// whatever chunk hasn't been processed yet (checked again per-chunk in
+// sendCampaign.ts), and anyone added after the attempt started is simply
+// not part of this send at all.
+export async function createAttempt(campaignId: string, emails: string[]): Promise<SendAttempt> {
+  const [attempt] = await getSql()`
+    INSERT INTO send_attempts (campaign_id) VALUES (${campaignId}) RETURNING *
+  `;
+  if (emails.length > 0) {
+    await getSql()`
+      INSERT INTO send_attempt_recipients (attempt_id, email)
+      SELECT ${attempt.id}, unnest(${emails}::text[])
+      ON CONFLICT (attempt_id, email) DO NOTHING
+    `;
+  }
+  return attempt as SendAttempt;
+}
+
+export async function getPendingAttemptRecipients(attemptId: string, limit: number): Promise<string[]> {
+  const rows = await getSql()`
+    SELECT email FROM send_attempt_recipients
+    WHERE attempt_id = ${attemptId} AND sent_at IS NULL AND failed = false
+    LIMIT ${limit}
+  `;
+  return rows.map((r) => r.email as string);
+}
+
+export async function markAttemptRecipientsResult(
+  attemptId: string,
+  successEmails: string[],
+  failedEmails: string[]
+): Promise<void> {
+  if (successEmails.length > 0) {
+    await getSql()`
+      UPDATE send_attempt_recipients SET sent_at = now()
+      WHERE attempt_id = ${attemptId} AND email = ANY(${successEmails}::text[])
+    `;
+  }
+  if (failedEmails.length > 0) {
+    await getSql()`
+      UPDATE send_attempt_recipients SET failed = true
+      WHERE attempt_id = ${attemptId} AND email = ANY(${failedEmails}::text[])
+    `;
+  }
+}
+
+export async function countAttemptProgress(
+  attemptId: string
+): Promise<{ total: number; sent: number; failed: number; pending: number }> {
+  const rows = await getSql()`
+    SELECT
+      count(*)::int AS total,
+      count(*) FILTER (WHERE sent_at IS NOT NULL)::int AS sent,
+      count(*) FILTER (WHERE failed)::int AS failed,
+      count(*) FILTER (WHERE sent_at IS NULL AND NOT failed)::int AS pending
+    FROM send_attempt_recipients WHERE attempt_id = ${attemptId}
+  `;
+  return rows[0] as { total: number; sent: number; failed: number; pending: number };
+}
+
+export async function completeAttempt(attemptId: string): Promise<void> {
+  await getSql()`UPDATE send_attempts SET status = 'completed', completed_at = now() WHERE id = ${attemptId}`;
 }

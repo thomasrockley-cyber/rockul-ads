@@ -149,20 +149,37 @@ export default function CampaignEditor({
     });
   }
 
+  // A single call caps out at whatever fits in one ~50s serverless
+  // invocation (see lib/sendCampaign.ts). For a bigger list, the API
+  // returns done:false and this keeps calling the same endpoint — each
+  // call resumes exactly where the last one left off, so nobody gets
+  // double-emailed — until it comes back done:true.
   async function sendNow() {
     if (!confirm(`Send this ad to ${activeRecipientCount} recipient(s) right now?`)) return;
     setSending(true);
     setMessage(null);
-    const res = await fetch(`/api/campaigns/${campaign.id}/send`, { method: "POST" });
-    const data = await res.json();
-    setSending(false);
-    if (!res.ok) {
-      setMessage(data.error ?? "Send failed.");
-      return;
+
+    let totalSent = 0;
+    let totalFailed = 0;
+
+    while (true) {
+      const res = await fetch(`/api/campaigns/${campaign.id}/send`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setSending(false);
+        setMessage(data.error ?? "Send failed.");
+        return;
+      }
+      totalSent += data.sent;
+      totalFailed += data.failed;
+      if (data.done) break;
+      setMessage(`Sending… ${totalSent} sent so far, ${data.pending} left. Keep this tab open.`);
     }
-    setMessage(`Sent to ${data.sent}, failed ${data.failed}.`);
+
+    setSending(false);
+    setMessage(`Sent to ${totalSent}, failed ${totalFailed}.`);
     setSendLog((prev) => [
-      { id: crypto.randomUUID(), sent_at: new Date().toISOString(), recipient_count: data.sent, status: data.failed > 0 ? "partial" : "sent", error: null },
+      { id: crypto.randomUUID(), sent_at: new Date().toISOString(), recipient_count: totalSent, status: totalFailed > 0 ? "partial" : "sent", error: null },
       ...prev,
     ]);
   }

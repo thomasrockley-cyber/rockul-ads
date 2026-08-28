@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDueCampaigns } from "@/lib/db";
-import { sendCampaignNow } from "@/lib/sendCampaign";
+import { sendCampaignNow, BUDGET_MS } from "@/lib/sendCampaign";
 
 // 60s is the max on Vercel's Hobby plan. This route can process up to 5
 // campaigns in one run (all due on the same day), so it's the more likely
@@ -19,9 +19,20 @@ export async function GET(req: Request) {
 
   const due = await getDueCampaigns();
 
+  // One deadline shared across every campaign in this run — see the
+  // comment on sendCampaignNow() for why a fresh per-campaign budget would
+  // be unsafe here. Any campaign that doesn't finish within its share of
+  // the remaining time stays in_progress and gets picked up on the next
+  // cron tick (or resumes immediately below if there's still budget left).
+  const sharedDeadline = Date.now() + BUDGET_MS;
+
   const results = [];
   for (const campaign of due) {
-    const result = await sendCampaignNow(campaign.id);
+    if (Date.now() >= sharedDeadline) {
+      results.push({ campaignId: campaign.id, ok: true, done: false, skipped: true });
+      continue;
+    }
+    const result = await sendCampaignNow(campaign.id, sharedDeadline);
     results.push({ campaignId: campaign.id, ...result });
   }
 
